@@ -40,10 +40,10 @@ The log is one OpenTelemetry/GenAI span per line. Parsing mirrors the rules in
 `parent_span_id`, steps = `round N` spans). See that module and
 `src/hackingBuddyGPT/utils/log_storage.py` for the attribute keys.
 
-### Known limitation
+### Older logs
 
-For the simple-text strategies, the engine logs the prompt as an unrendered
-`mako.template.Template` object repr rather than the rendered prompt text, so the
-"prompt sent" field shows a note instead of the actual prompt. This is an engine
-logging issue, not a viewer one; fixing it means rendering the template before
-logging in `call_response`.
+Runs produced before the prompt-logging fix stored the prompt as an unrendered
+`mako.template.Template` object repr instead of the rendered text. The viewer
+detects those and shows a note in the "prompt sent" field rather than a useless
+object address. New runs log the real rendered prompt, which the viewer shows in
+full.
