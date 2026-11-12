@@ -34,8 +34,10 @@ from hackingBuddyGPT.utils.log_storage import (
     GEN_AI_USAGE_INPUT_TOKENS,
     GEN_AI_USAGE_OUTPUT_TOKENS,
     GEN_AI_USAGE_REASONING_OUTPUT_TOKENS,
+    HB_APPROVAL,
     HB_COST_USD,
     HB_MESSAGE_ROLE,
+    HB_PHASE,
     HB_REASONING,
     HB_RUN_CONFIGURATION,
     HB_RUN_NAME,
@@ -216,6 +218,30 @@ class JsonlLogger:
             self._stack.pop()
         # emitted at close (after its children) — readers link by parent_span_id, not file order
         self._writer.write(span)
+
+    # --- phases / human-approval gate ---------------------------------------
+
+    def set_phase(self, phase: Optional[str]) -> None:
+        """Tag the currently-open section span (normally the enclosing ``round N``) with an
+        engagement phase (recon / vuln-id / suggestion / exploit). Additive attribute: readers that
+        don't know the key simply ignore it. No-op when no section is open or ``phase`` is empty."""
+        if phase and self._stack:
+            self._stack[-1].attributes[HB_PHASE] = phase
+
+    def approval_event(self, command: str, decision: str) -> None:
+        """Emit a human-approval-gate event as its own INTERNAL span and mirror it to the console.
+        ``decision`` is one of ``requested`` / ``approved`` / ``denied``. The span carries
+        ``HB_APPROVAL`` (the decision) and the command, so a viewer can render the gate distinctly."""
+        now = datetime.datetime.now()
+        self._emit(
+            f"approval {decision}",
+            KIND_INTERNAL,
+            {HB_APPROVAL: decision, GEN_AI_TOOL_CALL_ARGUMENTS: command},
+            now,
+            now,
+        )
+        colour = {"approved": "green", "denied": "red"}.get(decision, "yellow")
+        self.console.print(Panel(command, title=f"[{colour}]Human approval: {decision}[/{colour}]"))
 
     # --- messages ------------------------------------------------------------
 
