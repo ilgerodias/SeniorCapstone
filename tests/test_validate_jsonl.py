@@ -82,3 +82,13 @@ def test_invalid_json_fails(tmp_path):
 
     assert errors
     assert any("Line 1:" in error for error in errors)
+
+def test_project_generated_log_passes(tmp_path):
+    from tests.test_log_storage import _drive_run
+
+    path = _drive_run(str(tmp_path))
+
+    records, errors = validate(path)
+
+    assert records > 0
+    assert errors == []
