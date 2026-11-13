@@ -1,3 +1,5 @@
+#This fork is for a project solely for academic research purposes.
+
 <div align="center">
   <img src="https://github.com/ipa-lab/hackingBuddyGPT/blob/main/docs/hackingbuddy-rounded.png?raw=true" width="96" alt="hackingBuddyGPT logo">
   <h1>hackingBuddyGPT</h1>
