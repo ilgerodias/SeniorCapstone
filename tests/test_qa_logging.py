@@ -20,8 +20,10 @@ def test_tool_call_has_required_qa_fields(tmp_path):
     tool = tools[0]
     attrs = tool["attributes"]
 
-    assert datetime.datetime.fromisoformat(tool["start_time"])
-    assert datetime.datetime.fromisoformat(tool["end_time"])
+    start = datetime.datetime.fromisoformat(tool["start_time"])
+    end = datetime.datetime.fromisoformat(tool["end_time"])
+
+    assert end >= start, "Tool-call end time must not precede start time"
 
     assert attrs["gen_ai.tool.name"] == "exec"
     assert attrs["gen_ai.tool.call.id"] == "0"
