@@ -41,3 +41,4 @@ src/hackingBuddyGPT/usecases/web_api/converted_files/
 src/hackingBuddyGPT/usecases/web_api/retrieve_spotify_token.py
 
 .claude
+VMs/
