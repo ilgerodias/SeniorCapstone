@@ -1,0 +1,2 @@
+run_id,target,rag_enabled,run_number,date,operator,rounds_used,wall_clock_minutes,estimated_cost_usd,got_root,vuln_id_correct,suggestion_usefulness_avg,reliability_notes,jsonl_log_path,notes
+example-001,kioptrix-l1,TRUE,1,2026-11-20,kevin,42,18,0.00,y,correct,0.9,"1 repeated-command loop at round 12, self-recovered",logs/kioptrix-l1_rag_run1.jsonl,"baseline sanity run"

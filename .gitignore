@@ -41,3 +41,6 @@ src/hackingBuddyGPT/usecases/web_api/converted_files/
 src/hackingBuddyGPT/usecases/web_api/retrieve_spotify_token.py
 
 .claude
+
+# persisted local RAG vector store (rebuild with scripts/rag_ingest.py)
+.chroma/
