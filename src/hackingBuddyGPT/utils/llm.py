@@ -8,7 +8,7 @@ from hackingBuddyGPT.capabilities import Capability
 from hackingBuddyGPT.capability import capabilities_to_tools
 from hackingBuddyGPT.utils import LLM, LLMResult, configurable
 from hackingBuddyGPT.utils.configurable import parameter
-from hackingBuddyGPT.utils.llm_util import user_message
+from hackingBuddyGPT.utils.llm_util import render_to_text, user_message
 
 
 @configurable("litellm", "litellm-based unified LLM connection")
@@ -59,6 +59,8 @@ class LiteLLM(LLM):
         if chat_style:
             messages = prompt
             tools = capabilities_to_tools(capabilities) if capabilities else None
+            # flatten the message list so the logged prompt is the actual text, not a repr
+            rendered_prompt = render_to_text(messages)
         else:
             if hasattr(prompt, "render"):
                 render_kwargs = dict(kwargs)
@@ -69,6 +71,8 @@ class LiteLLM(LLM):
                 content = str(prompt)
             messages = [user_message(content)]
             tools = None
+            # the rendered template text (``content`` is reassigned to the reply below)
+            rendered_prompt = content
 
         # tool_choice (e.g. "required" or {"type": "function", "function": {"name": ...}}) is only
         # meaningful when tools are offered; ignore it otherwise so a stray value can't reach the API.
@@ -112,7 +116,7 @@ class LiteLLM(LLM):
 
         return LLMResult(
             result,
-            str(prompt),
+            rendered_prompt,
             content,
             reasoning,
             duration,

@@ -1,4 +1,5 @@
 import abc
+import asyncio
 import datetime
 
 from dataclasses import dataclass
@@ -36,6 +37,16 @@ class CommandStrategy(AutonomousUseCase, abc.ABC):
     disable_history: bool = False
 
     enable_compressed_history: bool = False
+
+    # Human-in-the-loop gate: when set, pause before executing each command and ask the operator to
+    # approve it. Opt-in so autonomous/benchmark runs are unaffected.
+    require_approval: bool = False
+
+    # engagement phases, in order, tagged onto each round span via the logger for the run-viewer.
+    PHASE_RECON = "recon"
+    PHASE_VULN_ID = "vuln-id"
+    PHASE_SUGGESTION = "suggestion"
+    PHASE_EXPLOIT = "exploit"
 
     async def before_run(self):
         # The shared loop calls this once before the first round; expose the capability list to the
@@ -82,6 +93,8 @@ class CommandStrategy(AutonomousUseCase, abc.ABC):
             self._history.append(cmd, result)
 
             task_successful = self.check_success(cmd, result)
+            # tag this round with an engagement phase for the run-viewer (last command in the round wins)
+            self.log.set_phase(self.classify_phase(cmd, result, task_successful))
             await self.after_command_execution(cmd, result, task_successful)
             if task_successful:
                 # Mark the run solved; the shared loop's limits.reached() then ends it as a success.
@@ -118,12 +131,71 @@ class CommandStrategy(AutonomousUseCase, abc.ABC):
 
         assert len(output) == 1
         capability, cmd, result = output[0]
+
+        # human-in-the-loop gate (opt-in): pause and ask the operator before actually executing.
+        if self.require_approval and not await self._request_approval(cmd):
+            # the simple-text handler already built (but did not run) the capability coroutine; close
+            # it so it doesn't emit a "never awaited" warning, then feed the denial back to the LLM.
+            if hasattr(result, "close"):
+                result.close()
+            denial = "[operator denied this command]"
+            await self.log.add_tool_call(message_id, tool_call_id=0, function_name=capability, arguments=cmd, result_text=denial, duration=0)
+            return denial
+
         # capability execution is asynchronous now, the simple-text handler returns the coroutine
         result = await result
         duration = datetime.datetime.now() - start_time
         await self.log.add_tool_call(message_id, tool_call_id=0, function_name=capability, arguments=cmd, result_text=result, duration=duration)
 
         return result
+
+    async def _request_approval(self, cmd: str) -> bool:
+        """Human-in-the-loop gate: pause the run and ask the operator whether to execute ``cmd``.
+        The blocking console read runs on a worker thread so the asyncio loop keeps running. An
+        empty answer or y/yes approves; anything else denies. If stdin is unavailable (e.g. a
+        non-interactive/background run) the command is denied, since nobody is there to approve it."""
+        self.log.approval_event(cmd, "requested")
+        try:
+            answer = await asyncio.get_event_loop().run_in_executor(
+                None, input, f"[approval] execute this command? {cmd!r} [Y/n] "
+            )
+            approved = answer.strip().lower() in ("", "y", "yes")
+        except (EOFError, OSError):
+            approved = False
+        self.log.approval_event(cmd, "approved" if approved else "denied")
+        return approved
+
+    def classify_phase(self, cmd: str, result: str, got_root: bool) -> str:
+        """Heuristically label a step with an engagement phase for the run-viewer. Rule-based (no
+        extra LLM call): a confirmed root is the exploit; otherwise the command text decides. This
+        is intentionally simple and meant to be overridden/tuned (and ultimately reconciled with the
+        engine's own markers) — it never raises and always returns one of the ``PHASE_*`` labels."""
+        if got_root:
+            return self.PHASE_EXPLOIT
+        c = (cmd or "").strip().lower()
+
+        # an actual credential attempt against another user is an escalation attempt
+        if c.startswith("test_credential"):
+            return self.PHASE_EXPLOIT
+        # hunting for the specific misconfiguration to abuse (checked before exploit, since e.g.
+        # "sudo -l" contains the "sudo " exploit marker but is really enumeration)
+        vuln_id = ("sudo -l", "-perm -4000", "-perm -u=s", "find / -perm", "getcap",
+                   "-writable", "linpeas", "lse.sh", "/etc/crontab", "/etc/cron", "dpkg -l", "rpm -qa")
+        if any(m in c for m in vuln_id):
+            return self.PHASE_VULN_ID
+        # actively escalating: abusing sudo/su, flipping setuid, spawning a shell, writing to
+        # sensitive files, etc.
+        exploit = ("sudo ", "su ", "su -", "chmod u+s", "chmod +s", "setuid", "/bin/sh", "/bin/bash",
+                   "os.setuid", "> /etc/passwd", ">> /etc/passwd", "/etc/sudoers", "crontab -", "nc -")
+        if any(m in c for m in exploit):
+            return self.PHASE_EXPLOIT
+        # basic information gathering
+        recon = ("id", "whoami", "uname", "hostname", "pwd", "ls", "/etc/passwd", "/etc/os-release",
+                 "/etc/issue", "ps ", "ps aux", "netstat", "ss -", "env", "history", "groups", "cat ")
+        if any(c == m or c.startswith(m) or m in c for m in recon):
+            return self.PHASE_RECON
+        # couldn't pin it to recon/vuln-id/exploit: treat as the model proposing/preparing a step
+        return self.PHASE_SUGGESTION
 
     @abc.abstractmethod
     def check_success(self, cmd:str, result:str) -> bool:

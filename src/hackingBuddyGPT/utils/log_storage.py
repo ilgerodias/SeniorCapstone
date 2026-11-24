@@ -49,6 +49,10 @@ HB_MESSAGE_ROLE = "hackingbuddygpt.message.role"
 HB_TOOL_RESULT = "hackingbuddygpt.tool.result"
 HB_SECTION_NAME = "hackingbuddygpt.section.name"
 HB_SECTION_CONVERSATION = "hackingbuddygpt.section.conversation"
+# engagement phase of a step (recon / vuln-id / suggestion / exploit); tagged on the round span.
+HB_PHASE = "hackingbuddygpt.phase"
+# human-in-the-loop approval-gate decision for a command (requested / approved / denied).
+HB_APPROVAL = "hackingbuddygpt.approval"
 
 # well-known gen_ai.operation.name values
 OP_CHAT = "chat"

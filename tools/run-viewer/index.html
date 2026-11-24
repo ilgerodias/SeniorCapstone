@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HBG Run Viewer</title>
+<style>
+  :root{
+    --bg:#ffffff; --fg:#1a1a1a; --muted:#6b7280; --line:#d0d0d0;
+    --panel:#f6f6f6; --hover:#eef2ff; --sel:#e0e7ff;
+    --recon:#2563eb; --vulnid:#b45309; --suggestion:#6b7280; --exploit:#b91c1c; --unknown:#9ca3af;
+    --req:#6b7280; --approved:#15803d; --denied:#b91c1c;
+    --root:#b91c1c; --ok:#15803d; --warn:#b45309;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    font-family:ui-monospace,"Cascadia Mono","Consolas","DejaVu Sans Mono",monospace;
+    font-size:12px; line-height:1.45; color:var(--fg); background:var(--bg);
+  }
+  .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:6px 10px;border-bottom:1px solid var(--line);background:var(--panel)}
+  .bar .sp{flex:1}
+  button,select,input[type=text]{font:inherit;color:var(--fg);background:#fff;border:1px solid var(--line);padding:3px 7px}
+  button{cursor:pointer}
+  button.active{background:var(--sel);border-color:#6366f1}
+  label.ck{display:inline-flex;gap:4px;align-items:center;white-space:nowrap}
+  .meta{display:flex;flex-wrap:wrap;gap:4px 16px;padding:5px 10px;border-bottom:1px solid var(--line);color:var(--muted)}
+  .meta b{color:var(--fg);font-weight:600}
+  .banner{padding:5px 10px;background:#fff7ed;border-bottom:1px solid var(--warn);color:#7c2d12;cursor:pointer}
+  .banner.hide{display:none}
+  .drop{margin:40px auto;max-width:560px;border:1px dashed var(--line);padding:40px;text-align:center;color:var(--muted)}
+  .drop.drag{background:var(--hover);border-color:#6366f1}
+
+  /* layout */
+  #app{display:flex;height:calc(100vh - 0px);min-height:0}
+  .mode-report #app{display:block;overflow:auto}
+  #list{width:46%;max-width:620px;overflow:auto;border-right:1px solid var(--line)}
+  #detail{flex:1;overflow:auto;padding:10px}
+  .mode-report #list,.mode-report #detail{display:none}
+  #report{display:none;padding:14px;max-width:900px}
+  .mode-report #report{display:block}
+
+  /* step rows */
+  .row{display:grid;grid-template-columns:52px 96px 1fr auto;gap:8px;align-items:center;
+       padding:4px 8px;border-bottom:1px solid #ececec;border-left:4px solid var(--unknown);cursor:pointer}
+  .row:hover{background:var(--hover)}
+  .row.sel{background:var(--sel)}
+  .row .rn{color:var(--muted)}
+  .row .tool{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .tags{display:flex;gap:4px;align-items:center}
+  .row.hidden{display:none}
+
+  .phase{display:inline-flex;align-items:center;gap:5px}
+  .sw{display:inline-block;width:9px;height:9px;border:1px solid rgba(0,0,0,.25)}
+  .tag{padding:0 5px;border:1px solid var(--line);color:#fff;font-size:11px;white-space:nowrap}
+  .tag.req{background:var(--req)} .tag.approved{background:var(--approved)} .tag.denied{background:var(--denied)}
+  .tag.root{background:var(--root)} .tag.outline{background:#fff;color:var(--fg)}
+
+  /* phase left-border colors */
+  .p-recon{border-left-color:var(--recon)} .p-vulnid{border-left-color:var(--vulnid)}
+  .p-suggestion{border-left-color:var(--suggestion)} .p-exploit{border-left-color:var(--exploit)}
+  .p-unknown{border-left-color:var(--unknown)}
+
+  /* detail */
+  h2{font-size:13px;margin:0 0 8px;border-bottom:1px solid var(--line);padding-bottom:4px}
+  .fld{margin:0 0 10px}
+  .fld .k{color:var(--muted);text-transform:uppercase;font-size:11px;letter-spacing:.04em}
+  pre{margin:2px 0 0;padding:6px 8px;background:var(--panel);border:1px solid var(--line);
+      white-space:pre-wrap;word-break:break-word;overflow-x:auto}
+  .note{color:var(--muted);font-style:italic}
+  .kv{color:var(--muted)}
+  .toolblk{border:1px solid var(--line);margin:6px 0;padding:6px 8px}
+  .toolblk .hd{font-weight:600}
+  .empty{color:var(--muted);padding:20px}
+
+  /* report */
+  .rstep{border-top:1px solid var(--line);padding:8px 0;page-break-inside:avoid}
+  .rhd{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .rtitle{font-weight:700}
+
+  @media print{
+    .bar,.banner,#list,#detail{display:none !important}
+    body{font-size:10.5px}
+    #app{display:block}
+    #report{display:block !important}
+    .rstep{border-color:#999}
+    pre{background:#fff;border-color:#bbb}
+  }
+</style>
+</head>
+<body class="mode-timeline">
+  <div class="bar">
+    <button id="open">Open log</button>
+    <input id="file" type="file" accept=".jsonl,.json,.log,.txt" hidden>
+    <span id="fname" class="kv">no file</span>
+    <span class="sp"></span>
+    <input id="q" type="text" placeholder="search prompt / answer / command / output" size="34">
+    <select id="fphase"><option value="">phase: all</option></select>
+    <select id="ftool"><option value="">tool: all</option></select>
+    <label class="ck"><input type="checkbox" id="fappr">approvals</label>
+    <label class="ck"><input type="checkbox" id="fexpl">exploit</label>
+    <span class="sp"></span>
+    <button id="vTimeline" class="active">Timeline</button>
+    <button id="vReport">Report</button>
+    <button id="export">Export JSON</button>
+    <button id="print">Print</button>
+  </div>
+
+  <div id="meta" class="meta" style="display:none"></div>
+  <div id="banner" class="banner hide"></div>
+
+  <div id="app">
+    <div id="list">
+      <div id="drop" class="drop">Drop a <b>log-*.jsonl</b> file here, or click <b>Open log</b>.<br>Runs fully in your browser. No server, no upload.</div>
+    </div>
+    <div id="detail"><div class="empty">Select a step.</div></div>
+    <div id="report"></div>
+  </div>
+
+<script>
+"use strict";
+
+var PHASE_CLASS = {recon:"p-recon","vuln-id":"p-vulnid",suggestion:"p-suggestion",exploit:"p-exploit"};
+var PHASE_VAR   = {recon:"--recon","vuln-id":"--vulnid",suggestion:"--suggestion",exploit:"--exploit"};
+
+var STATE = {run:null, steps:[], malformed:[], sel:-1};
+
+/* ---------- helpers ---------- */
+function el(id){return document.getElementById(id);}
+function esc(s){return String(s==null?"":s).replace(/[&<>]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c];});}
+function phaseClass(p){return PHASE_CLASS[p]||"p-unknown";}
+function phaseColor(p){return "var("+(PHASE_VAR[p]||"--unknown")+")";}
+function msgText(list){
+  if(!Array.isArray(list)) return "";
+  var out=[];
+  list.forEach(function(m){
+    (m.parts||[]).forEach(function(p){ if(p && p.content!=null) out.push(p.content); });
+  });
+  return out.join("\n");
+}
+var MAKO=/^<mako\.template\.Template object at /;
+
+/* ---------- parsing ---------- */
+function parseLog(text){
+  var lines=text.split(/\r?\n/);
+  var spans=[], malformed=[];
+  for(var i=0;i<lines.length;i++){
+    var ln=lines[i].trim();
+    if(!ln) continue;
+    try{ spans.push(JSON.parse(ln)); }
+    catch(e){ malformed.push({line:i+1, text:lines[i], error:String(e.message||e)}); }
+  }
+  // de-dup by span_id, last write wins (run span's final line, closed sections)
+  var byId={}, order=[];
+  spans.forEach(function(s){
+    var id=s.span_id;
+    if(id==null){ id="_"+order.length; }
+    if(!(id in byId)) order.push(id);
+    byId[id]=s;
+  });
+  var uniq=order.map(function(id){return byId[id];});
+
+  // index children
+  var kids={};
+  uniq.forEach(function(s){
+    var p=s.parent_span_id||"__root__";
+    (kids[p]=kids[p]||[]).push(s);
+  });
+  function attr(s,k){return (s.attributes||{})[k];}
+  function startMs(s){var t=Date.parse(s.start_time); return isNaN(t)?0:t;}
+
+  // run span = parent_span_id null, with run.name
+  var runSpan=uniq.find(function(s){return s.parent_span_id==null && attr(s,"hackingbuddygpt.run.name");})
+            || uniq.find(function(s){return s.parent_span_id==null;});
+  var cfg={};
+  try{ cfg=JSON.parse(attr(runSpan,"hackingbuddygpt.run.configuration")||"{}"); }catch(e){ cfg={}; }
+  var conn=cfg.conn||{}, llm=cfg.llm||{};
+  var state=attr(runSpan,"hackingbuddygpt.run.state");
+  var statusCode=(runSpan&&runSpan.status&&runSpan.status.code)||"";
+  var rooted = state==="got root";
+
+  // rounds
+  var rounds=uniq.filter(function(s){return typeof s.name==="string" && /^round\s+\d+/.test(s.name);});
+  rounds.sort(function(a,b){return startMs(a)-startMs(b);});
+
+  function subtree(root){
+    var acc=[], stack=[root.span_id];
+    while(stack.length){
+      var cur=stack.pop();
+      (kids[cur]||[]).forEach(function(c){ acc.push(c); stack.push(c.span_id); });
+    }
+    return acc;
+  }
+
+  var steps=rounds.map(function(r){
+    var sub=subtree(r).sort(function(a,b){return startMs(a)-startMs(b);});
+    var chat=sub.filter(function(s){return attr(s,"gen_ai.operation.name")==="chat";});
+    var tools=sub.filter(function(s){return attr(s,"gen_ai.operation.name")==="execute_tool";});
+    var apprs=sub.filter(function(s){return attr(s,"hackingbuddygpt.approval")!=null;});
+    var prompt="", answer="";
+    if(chat.length){
+      prompt=msgText(attr(chat[0],"gen_ai.input.messages"));
+      answer=msgText(attr(chat[chat.length-1],"gen_ai.output.messages"));
+    }
+    var mnum=(String(r.name).match(/round\s+(\d+)/)||[])[1];
+    var dur=(Date.parse(r.end_time)-Date.parse(r.start_time));
+    return {
+      round: mnum?parseInt(mnum,10):null,
+      phase: attr(r,"hackingbuddygpt.phase")||null,
+      start: r.start_time||"", durationMs: isNaN(dur)?null:dur,
+      prompt: prompt, promptIsTemplate: MAKO.test(prompt), answer: answer,
+      tools: tools.map(function(t){return {
+        name: attr(t,"gen_ai.tool.name")||"",
+        args: attr(t,"gen_ai.tool.call.arguments")||"",
+        result: attr(t,"hackingbuddygpt.tool.result")||"",
+        tokensIn: attr(t,"gen_ai.usage.input_tokens"), tokensOut: attr(t,"gen_ai.usage.output_tokens")
+      };}),
+      approvals: apprs.map(function(a){return {
+        decision: attr(a,"hackingbuddygpt.approval"),
+        command: attr(a,"gen_ai.tool.call.arguments")||""
+      };}),
+      tokensIn: chat.length?attr(chat[0],"gen_ai.usage.input_tokens"):null,
+      tokensOut: chat.length?attr(chat[chat.length-1],"gen_ai.usage.output_tokens"):null,
+      isExploit: attr(r,"hackingbuddygpt.phase")==="exploit",
+      isRoot:false
+    };
+  });
+  // mark the root step: last round if the run reached root
+  if(rooted && steps.length) steps[steps.length-1].isRoot=true;
+
+  var run={
+    name: attr(runSpan,"hackingbuddygpt.run.name")||(runSpan&&runSpan.name)||"run",
+    model: llm.model||"",
+    target: {host:conn.host, port:conn.port, username:conn.username, hostname:conn.hostname},
+    state: state||null, statusCode:statusCode, rooted:rooted,
+    rounds: steps.length,
+    start: runSpan?runSpan.start_time:"", end: runSpan?runSpan.end_time:""
+  };
+  return {run:run, steps:steps, malformed:malformed};
+}
+
+/* ---------- rendering ---------- */
+function renderMeta(){
+  var r=STATE.run; if(!r){el("meta").style.display="none";return;}
+  var outcome = r.rooted
+      ? '<b style="color:var(--root)">GOT ROOT</b>'
+      : '<b>'+esc(r.state|| (r.statusCode==="ERROR"?"failed":"incomplete"))+'</b>';
+  var t=r.target||{};
+  el("meta").style.display="flex";
+  el("meta").innerHTML=
+    'run <b>'+esc(r.name)+'</b>'+
+    ' · model <b>'+esc(r.model||"?")+'</b>'+
+    ' · target <b>'+esc((t.username||"?")+"@"+(t.host||"?")+":"+(t.port||"?")+" ("+(t.hostname||"?")+")")+'</b>'+
+    ' · steps <b>'+r.rounds+'</b>'+
+    ' · outcome '+outcome;
+}
+
+function stepMatches(s){
+  var q=el("q").value.trim().toLowerCase();
+  if(q){
+    var hay=[s.prompt,s.answer].concat(s.tools.map(function(t){return t.name+" "+t.args+" "+t.result;})).join("\n").toLowerCase();
+    if(hay.indexOf(q)<0) return false;
+  }
+  var ph=el("fphase").value; if(ph && (s.phase||"")!==ph) return false;
+  var tl=el("ftool").value; if(tl && !s.tools.some(function(t){return t.name===tl;})) return false;
+  if(el("fappr").checked && s.approvals.length===0) return false;
+  if(el("fexpl").checked && !s.isExploit && !s.isRoot) return false;
+  return true;
+}
+
+function apprTag(d){ return '<span class="tag '+esc(d)+'">'+esc(d)+'</span>'; }
+
+function renderList(){
+  var list=el("list");
+  if(!STATE.steps.length){ return; }
+  var html="";
+  STATE.steps.forEach(function(s,i){
+    var vis=stepMatches(s);
+    var toolNames=s.tools.map(function(t){return t.name||"(parse-error)";}).join(", ")||"(none)";
+    var tags="";
+    s.approvals.forEach(function(a){ tags+=apprTag(a.decision); });
+    if(s.isRoot) tags+='<span class="tag root">ROOT</span>';
+    html+='<div class="row '+phaseClass(s.phase)+(vis?"":" hidden")+(i===STATE.sel?" sel":"")+'" data-i="'+i+'">'+
+            '<span class="rn">#'+(s.round==null?(i+1):s.round)+'</span>'+
+            '<span class="phase"><span class="sw" style="background:'+phaseColor(s.phase)+'"></span>'+esc(s.phase||"unknown")+'</span>'+
+            '<span class="tool">'+esc(toolNames)+'</span>'+
+            '<span class="tags">'+tags+'</span>'+
+          '</div>';
+  });
+  list.innerHTML=html;
+  Array.prototype.forEach.call(list.querySelectorAll(".row"),function(row){
+    row.addEventListener("click",function(){ select(parseInt(row.getAttribute("data-i"),10)); });
+  });
+}
+
+function fld(k,v,cls){ return '<div class="fld"><div class="k">'+esc(k)+'</div><pre'+(cls?' class="'+cls+'"':'')+'>'+esc(v)+'</pre></div>'; }
+
+function renderDetail(){
+  var d=el("detail");
+  if(STATE.sel<0||!STATE.steps[STATE.sel]){ d.innerHTML='<div class="empty">Select a step.</div>'; return; }
+  var s=STATE.steps[STATE.sel];
+  var h='<h2>Step #'+(s.round==null?(STATE.sel+1):s.round)+
+        ' <span class="phase"><span class="sw" style="background:'+phaseColor(s.phase)+'"></span>'+esc(s.phase||"unknown")+'</span>'+
+        (s.isRoot?' <span class="tag root">ROOT</span>':'')+'</h2>';
+  h+='<div class="fld kv">start '+esc(s.start||"?")+' · duration '+(s.durationMs!=null?s.durationMs+" ms":"?")+
+     ' · tokens in/out '+esc((s.tokensIn==null?"?":s.tokensIn)+"/"+(s.tokensOut==null?"?":s.tokensOut))+'</div>';
+
+  if(s.approvals.length){
+    var at="";
+    s.approvals.forEach(function(a){ at+=apprTag(a.decision)+' <span class="kv">'+esc(a.command)+'</span>  '; });
+    h+='<div class="fld"><div class="k">approval gate</div><div>'+at+'</div></div>';
+  }
+  if(s.promptIsTemplate){
+    h+='<div class="fld"><div class="k">prompt sent</div><div class="note">[prompt is an unrendered template object in this log — rendered text was not captured by the engine]</div></div>';
+  }else{
+    h+=fld("prompt sent", s.prompt||"(none)");
+  }
+  h+=fld("model answer", s.answer||"(none)");
+  if(s.tools.length){
+    s.tools.forEach(function(t){
+      h+='<div class="toolblk"><div class="hd">tool: '+esc(t.name||"(parse error / rejected)")+'</div>'+
+         fld("arguments", t.args||"(none)")+ fld("output", t.result||"(none)")+'</div>';
+    });
+  }else{
+    h+='<div class="fld note">no tool executed in this step</div>';
+  }
+  d.innerHTML=h;
+}
+
+function renderReport(){
+  var r=STATE.run; var rep=el("report");
+  if(!r){ rep.innerHTML=""; return; }
+  var t=r.target||{};
+  var h='<h2>'+esc(r.name)+' — engagement run report</h2>';
+  h+='<div class="fld kv">model '+esc(r.model||"?")+' · target '+esc((t.username||"?")+"@"+(t.host||"?")+":"+(t.port||"?")+" ("+(t.hostname||"?")+")")+
+     ' · steps '+r.rounds+' · outcome '+(r.rooted?'GOT ROOT':esc(r.state||"incomplete"))+'</div>';
+  STATE.steps.forEach(function(s,i){
+    if(!stepMatches(s)) return;
+    var tags="";
+    s.approvals.forEach(function(a){ tags+=apprTag(a.decision)+" "; });
+    if(s.isRoot) tags+='<span class="tag root">ROOT</span>';
+    h+='<div class="rstep"><div class="rhd">'+
+       '<span class="sw" style="background:'+phaseColor(s.phase)+'"></span>'+
+       '<span class="rtitle">Step #'+(s.round==null?(i+1):s.round)+' — '+esc(s.phase||"unknown")+'</span> '+tags+'</div>';
+    if(s.promptIsTemplate) h+='<div class="note">prompt: unrendered template object (not captured)</div>';
+    else h+=fld("prompt", s.prompt||"(none)");
+    h+=fld("answer", s.answer||"(none)");
+    s.tools.forEach(function(tl){ h+=fld("tool "+(tl.name||"(rejected)")+" — arguments", tl.args||"(none)")+fld("output", tl.result||"(none)"); });
+    h+='</div>';
+  });
+  rep.innerHTML=h;
+}
+
+function renderAll(){ renderMeta(); renderList(); renderDetail(); renderReport(); }
+
+function select(i){ STATE.sel=i;
+  Array.prototype.forEach.call(el("list").querySelectorAll(".row"),function(row){
+    row.classList.toggle("sel", parseInt(row.getAttribute("data-i"),10)===i);
+  });
+  renderDetail();
+}
+
+function populateFilters(){
+  var tools={};
+  STATE.steps.forEach(function(s){ s.tools.forEach(function(t){ if(t.name) tools[t.name]=1; }); });
+  var ft=el("ftool"); ft.innerHTML='<option value="">tool: all</option>';
+  Object.keys(tools).sort().forEach(function(n){ ft.innerHTML+='<option value="'+esc(n)+'">'+esc(n)+'</option>'; });
+}
+
+/* ---------- load ---------- */
+function loadText(name,text){
+  try{
+    var parsed=parseLog(text);
+    STATE.run=parsed.run; STATE.steps=parsed.steps; STATE.malformed=parsed.malformed; STATE.sel=-1;
+  }catch(e){
+    el("banner").classList.remove("hide");
+    el("banner").textContent="Failed to parse file: "+(e.message||e);
+    return;
+  }
+  el("fname").textContent=name+"  ("+STATE.steps.length+" steps)";
+  var b=el("banner");
+  if(STATE.malformed.length){
+    b.classList.remove("hide");
+    b.textContent=STATE.malformed.length+" malformed line(s) skipped — click to view";
+    b.onclick=function(){ alert(STATE.malformed.slice(0,50).map(function(m){return "line "+m.line+": "+m.error+"\n  "+m.text.slice(0,200);}).join("\n\n")); };
+  }else{ b.classList.add("hide"); }
+  populateFilters();
+  renderAll();
+  if(STATE.steps.length) select(0);
+}
+function loadFile(f){ if(!f) return; var r=new FileReader(); r.onload=function(){ loadText(f.name,String(r.result)); }; r.readAsText(f); }
+
+/* ---------- wire up ---------- */
+el("open").onclick=function(){ el("file").click(); };
+el("file").onchange=function(e){ loadFile(e.target.files[0]); };
+["q","fphase","ftool"].forEach(function(id){ el(id).addEventListener("input",function(){ renderList(); renderReport(); }); });
+["fappr","fexpl"].forEach(function(id){ el(id).addEventListener("change",function(){ renderList(); renderReport(); }); });
+
+function setMode(m){
+  document.body.className="mode-"+m;
+  el("vTimeline").classList.toggle("active",m==="timeline");
+  el("vReport").classList.toggle("active",m==="report");
+}
+el("vTimeline").onclick=function(){ setMode("timeline"); };
+el("vReport").onclick=function(){ setMode("report"); renderReport(); };
+el("print").onclick=function(){ setMode("report"); renderReport(); window.print(); };
+el("export").onclick=function(){
+  var data={run:STATE.run, steps:STATE.steps.filter(stepMatches), malformed:STATE.malformed};
+  var blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+  var a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+  a.download=(STATE.run&&STATE.run.name?STATE.run.name:"run")+"-view.json"; a.click();
+};
+
+/* drag & drop over whole window */
+var drop=el("drop");
+function dragOn(e){ e.preventDefault(); if(drop) drop.classList.add("drag"); }
+function dragOff(e){ e.preventDefault(); if(drop) drop.classList.remove("drag"); }
+window.addEventListener("dragover",dragOn);
+window.addEventListener("dragleave",dragOff);
+window.addEventListener("drop",function(e){ dragOff(e); if(e.dataTransfer.files.length) loadFile(e.dataTransfer.files[0]); });
+
+// phase filter options are fixed + "unknown"
+["recon","vuln-id","suggestion","exploit","unknown"].forEach(function(p){
+  el("fphase").innerHTML+='<option value="'+p+'">phase: '+p+'</option>';
+});
+</script>
+</body>
+</html>
