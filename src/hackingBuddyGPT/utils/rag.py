@@ -42,5 +42,5 @@ class RagBackground:
     def get_relevant_documents(self, query):
         if not self.retriever:
             raise ValueError("RAG system not initialized")
-        result = self.retriever.get_relevant_documents(query)
+        result = self.retriever.invoke(query)        # was: self.retriever.get_relevant_documents(query)
         return "".join([d.page_content + "\n" for d in result])
