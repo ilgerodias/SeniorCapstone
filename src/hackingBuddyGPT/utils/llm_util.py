@@ -114,25 +114,28 @@ def cmd_output_fixer(cmd: str) -> str:
     if len(cmd) < 2:
         return cmd
 
-    stupidity = re.compile(r"^[ \n\r]*```.*\n(.*)\n```$", re.MULTILINE)
-    result = stupidity.search(cmd)
-    if result:
-        print("this would have been captured by the multi-line regex 1")
-        cmd = result.group(1)
-        print("new command: " + cmd)
-    stupidity = re.compile(r"^[ \n\r]*~~~.*\n(.*)\n~~~$", re.MULTILINE)
-    result = stupidity.search(cmd)
-    if result:
-        print("this would have been captured by the multi-line regex 2")
-        cmd = result.group(1)
-        print("new command: " + cmd)
-    stupidity = re.compile(r"^[ \n\r]*~~~.*\n(.*)\n~~~$", re.MULTILINE)
+    # 1. if wrapped in a fenced block (``` or ~~~), pull out the block body
+    fence = re.search(r"(?:```|~~~)[^\n]*\n(.*?)(?:```|~~~)", cmd, re.DOTALL)
+    if fence:
+        cmd = fence.group(1).strip(" \n")
 
+    # 2. the model often appends a prose explanation; keep only the first
+    #    non-empty line as the command
+    for line in cmd.splitlines():
+        if line.strip():
+            cmd = line.strip()
+            break
+
+    # 3. strip wrapping backticks / quotes
     cmd = remove_wrapping_characters(cmd, "`'\"")
 
-    if cmd.startswith("$ "):
-        cmd = cmd[2:]
+    # 4. strip LEADING shell-prompt sigils the model keeps adding ($, $$, $$$,
+    #    "$ ", "# ") despite the instruction not to. Leading only, so an
+    #    in-command variable like `echo $SHELL` is preserved.
+    cmd = re.sub(r"^[$#]+\s*", "", cmd).strip()
 
+    # 5. one more wrapper pass in case stripping exposed a wrapper
+    cmd = remove_wrapping_characters(cmd, "`'\"")
     return cmd
 
 
