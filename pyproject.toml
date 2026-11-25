@@ -23,6 +23,7 @@ classifiers = [
 ]
 dependencies = [
     'fabric',
+    'paramiko==3.5.1', # legacy SSH compatibility for Metasploitable 2
     'asyncssh',
     'Mako',
     'requests',
