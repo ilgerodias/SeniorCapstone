@@ -1,7 +1,7 @@
 try:
     from langchain_community.document_loaders import DirectoryLoader, TextLoader
     from langchain_chroma import Chroma
-    from langchain_openai import OpenAIEmbeddings
+    from langchain_ollama import OllamaEmbeddings
     from langchain_text_splitters import MarkdownTextSplitter
 except ImportError:
     _has_langchain = False
@@ -25,7 +25,10 @@ class RagBackground:
 
         markdown_splitter = MarkdownTextSplitter(chunk_size=1000, chunk_overlap=0)
         documents = markdown_splitter.split_documents(documents)
-        embeddings = OpenAIEmbeddings(model="text-embedding-3-large", api_key=llm.api_key)
+        embeddings = OllamaEmbeddings(
+            model="nomic-embed-text",
+            base_url=os.environ.get("OLLAMA_API_BASE", "http://192.168.122.1:11434"),
+        )
 
         print("loading into vector store")
         db = Chroma.from_documents(documents, embeddings)
